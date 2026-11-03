@@ -14,8 +14,6 @@ Browser (duotrigordle.com)                         Python (lokal)
                                                  └──────────────────────────────┘
 ```
 
-Die Wortlisten bleiben komplett in Python, der Browser braucht kein Wörterbuch.
-
 ## Funktionen
 
 - Exakte Wordle-Logik inklusive doppelter Buchstaben
