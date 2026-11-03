@@ -14,6 +14,8 @@ Browser (duotrigordle.com)                         Python (lokal)
                                                  └──────────────────────────────┘
 ```
 
+
+
 ## Funktionen
 
 - Exakte Wordle-Logik inklusive doppelter Buchstaben
@@ -32,6 +34,9 @@ Browser (duotrigordle.com)                         Python (lokal)
 - Firefox oder ein Chromium-Browser mit [Violentmonkey](https://violentmonkey.github.io/)
 - Linux wird empfohlen (dort wird ein Prozess-Pool genutzt). Andere Systeme laufen mit Threads.
 
+
+
+
 ## Installation
 
 ```bash
@@ -44,6 +49,9 @@ pip install -r requirements.txt
 # pip install cupy-cuda12x
 ```
 
+
+
+
 ### Userscript installieren
 
 Wähle einen der Wege:
@@ -51,6 +59,9 @@ Wähle einen der Wege:
 1. **Über den laufenden Server:** `python3 duo_bridge_server.py` starten und `http://127.0.0.1:8765/duo-bridge.user.js` im Browser öffnen. Violentmonkey bietet dann die Installation an.
 2. **Direkt von GitHub:** `https://raw.githubusercontent.com/<USER>/<REPO>/main/duo-bridge.user.js` öffnen.
 3. **Manuell:** Im Violentmonkey-Dashboard auf „+“ klicken, ein neues Script anlegen und den Inhalt von `duo-bridge.user.js` einfügen.
+
+
+
 
 ## Benutzung
 
@@ -64,6 +75,9 @@ Wähle einen der Wege:
    - **▶ Start** spielt, bis das Spiel vorbei ist
    - **⏭ Schritt** spielt genau einen Zug
    - **■ Stop** hält nach dem laufenden Zug an
+
+
+
 
 ### Server-Optionen
 
@@ -86,21 +100,15 @@ Wähle einen der Wege:
 | `solutions_learned.txt` | Zielwörter, die nicht in der Lösungsliste standen |
 | `bridge_cache.json` | Cache der Entscheidungen. Der erste Zug wird so nur einmal berechnet. |
 
+
+
+
 ## Laufzeit
 
 Der erste Zug ist der teuerste, weil jedes Wort gegen alle Kandidaten auf allen 32 Boards bewertet wird. Mit `--wide-solutions` sind das rund 7 Milliarden Paare, auf einer GPU etwa 5 Minuten. Danach landet die Entscheidung im Cache. Die späteren Züge werden mit schrumpfenden Kandidatenmengen schneller.
 
-## Beispiel: Daily vom 03.11.2026
 
-[`examples/daily-2026-11-03.log`](examples/daily-2026-11-03.log) zeigt einen echten Lauf mit `--wide-solutions` auf der GPU. Alle 32 Boards wurden in **35 von 37 Versuchen** gelöst. Einige Züge wurden dabei von Hand eingegeben, im Log sind das die Lücken in der Nummerierung (z. B. Guess 7–10).
 
-```
->>> TARES | attempt-oriented             | ELog=244.421 | N=32
->>> COLIN | attempt-oriented             | ELog=113.606 | N=4
->>> VIRAL | candidate-singleton-priority | ELog=95.721  | N=1
-...
->>> BOOZY | candidate-singleton-priority | ELog=0.000   | N=1
-```
 
 ## Solver ohne Browser
 
