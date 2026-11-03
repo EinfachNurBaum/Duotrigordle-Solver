@@ -26,9 +26,9 @@ Browser (duotrigordle.com)                         Python (lokal)
 - Fehlt ein Zielwort in der Lösungsliste, wird nur dieses Board automatisch auf alle gültigen Wörter erweitert
 - Gelöste Zielwörter, die unbekannt waren, werden gelernt und kommen in künftigen Spielen mit
 - Jede Entscheidung wird als JSONL protokolliert, praktisch für spätere Auswertungen
-#
-#
-#
+ 
+ 
+ 
 ## Voraussetzungen
 
 - Python 3.9 oder neuer
