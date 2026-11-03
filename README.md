@@ -65,8 +65,6 @@ Wähle einen der Wege:
    - **⏭ Schritt** spielt genau einen Zug
    - **■ Stop** hält nach dem laufenden Zug an
 
-Ein Board muss man nicht anklicken, die Eingabe geht automatisch an alle Boards. Man kann jederzeit stoppen, selbst ein paar Wörter tippen und dann wieder auf Start drücken.
-
 Für wiederholte Tests ist der Practice-Modus besser geeignet, damit das Daily nicht verbraucht wird.
 
 ### Server-Optionen
