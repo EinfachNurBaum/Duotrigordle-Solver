@@ -1,0 +1,4 @@
+numpy>=1.24
+wordfreq>=3.0
+# Optional für NVIDIA-GPUs (passend zur CUDA-Version), z. B.:
+# cupy-cuda12x
