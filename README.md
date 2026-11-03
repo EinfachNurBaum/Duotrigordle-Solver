@@ -88,9 +88,9 @@ Wähle einen der Wege:
 | `--no-cache` | Zwischengespeicherte Entscheidungen ignorieren |
 | `--quiet` | Weniger Ausgaben |
 | `--solutions`, `--guesses`, `--solver` | Eigene Wortlisten oder Solver-Datei verwenden |
-#
-#
-#
+
+
+
 ### Ausgabedateien (`output/`)
 
 | Datei | Inhalt |
