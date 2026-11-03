@@ -24,6 +24,7 @@
 \newcommand{\A}{\mathcal{A}}
 \newcommand{\V}{\mathcal{V}}
 \newcommand{\B}{\mathcal{B}}
+\newcommand{\X}{\mathcal{X}}
 \newcommand{\Fb}{\mathcal{F}}
 \newcommand{\green}{\mathbf{2}}
 \DeclareMathOperator*{\argmin}{arg\,min}
@@ -37,12 +38,14 @@
 \maketitle
 
 \begin{abstract}
-This note describes the model and the decision rule implemented in the files
-\texttt{duotrigordle\_solver.py} and \texttt{duo\_bridge\_server.py}.
-The solver keeps an exact set of consistent candidates per board, puts a
-heuristic prior on each set, and chooses every guess greedily by minimising
-the expected logarithmic size of the candidate sets after the guess.
-Already determined boards are cleared first.
+This note describes the model and the decision rule of the solver
+(\texttt{duotrigordle\_solver.py}) and of the live bridge
+(\texttt{duo\_bridge\_server.py}).
+The solver keeps, per board, the exact set of words from its solution list that are
+consistent with the observed feedback, puts a heuristic prior on each set, and
+chooses every guess greedily by minimising the expected logarithmic size of the
+candidate sets after the guess. With the default settings, boards whose target is
+already determined are cleared first.
 \end{abstract}
 
 \tableofcontents
@@ -53,13 +56,26 @@ Already determined boards are cleared first.
 
 Let $\Sigma$ be the alphabet and $L=5$ the word length. We use three word lists:
 \begin{itemize}
-  \item $\A \subseteq \Sigma^L$, the solution list (\texttt{solutions\_en.txt}, $|\A|=2313$),
-  \item $\G \subseteq \Sigma^L$, the allowed guesses (\texttt{guesses\_en.txt}, $|\G|=14855$),
+  \item $\A \subseteq \Sigma^L$, the solution list,
+  \item $\G \subseteq \Sigma^L$, the allowed guesses (\texttt{guesses\_en.txt}),
   \item $\V = \G \cup \A$, all valid words.
 \end{itemize}
-A game consists of $M=32$ boards with pairwise distinct target words
-$t_1,\dots,t_M \in \V$ and at most $K=37$ guesses.
+In the standalone simulation $\A$ is the file \texttt{solutions\_en.txt}.
+The bridge server uses the union of \texttt{solutions\_en.txt} and
+\texttt{solutions\_learned.txt} (targets learned from earlier games), or $\A = \G$
+with \texttt{-{}-wide-solutions}. The sizes $|\A|$ and $|\G|$ depend on these files;
+they are treated as constants here and printed by the server at startup
+(\texttt{L\"osungen=\dots}, \texttt{Guesses=\dots}).
+
+A game consists of $M=32$ boards (\texttt{NUM\_BOARDS}) with pairwise distinct target words
+$t_1,\dots,t_M$ and at most $K=37$ guesses (\texttt{MAX\_GUESSES}).
 Every guess $g_k$ is applied to all boards that are not yet solved.
+In the simulation the targets are drawn from $\A$; on the website they come from a list
+that is not known to the solver (see Section~\ref{sec:fallback}).
+
+The solver only proposes words from $\G' = \G \setminus \X$, where $\X$ is the set of
+words the website has rejected (field \texttt{exclude} of a bridge request; $\X=\emptyset$
+in the simulation). A target outside $\G'$ can therefore never be entered by the solver.
 
 \subsection{Feedback function}
 
@@ -126,28 +142,38 @@ It can be updated incrementally:
 $C_b^{(k)} = \{ t \in C_b^{(k-1)} : f(g_k,t) = \varphi_{b,k} \}$.
 Board $b$ is \emph{solved} at step $\tau_b = k$ if $\varphi_{b,k} = \green$.
 The set of active boards is $\B = \{ b : b \text{ not solved} \}$.
-A board with $|C_b| = 1$ is called a \emph{singleton}: its target is known,
-but it still costs one guess to enter it.
+A board with $|C_b| = 1$ is called a \emph{singleton}: if $t_b \in C_b$, its target is
+known, but it still costs one guess to enter it.
+
+Since $f(w,w) = \green$ for every word $w$, a guess $g_k$ is removed from $C_b$ on every
+active board $b$ with $\varphi_{b,k} \neq \green$. In particular, the word that solves one
+board never remains a candidate on any other board.
 
 \subsection{Fallback for missing targets}
+\label{sec:fallback}
 
-The live website may use a solution list different from $\A$.
-If the update yields $C_b^{(k)} = \emptyset$, the server rebuilds
-this board alone from all valid words:
+The bridge server allows the website to use a solution list different from $\A$.
+If the update yields $C_b^{(k)} = \emptyset$ for the first time on board $b$, the server
+rebuilds this board alone from all valid words:
 \[
   C_b^{(k)} = \bigl\{\, t \in \V : f(g_j,t) = \varphi_{b,j} \text{ for all } j \le k \,\bigr\}.
 \]
-Every target must be typeable, hence $t_b \in \V$ and the rebuilt set always contains
-$t_b$. If it is still empty, the observed feedback itself must be wrong
-(for example a misread colour). The other boards keep the smaller list $\A$,
+Later updates of this board filter the rebuilt set as usual.
+If the website's targets are contained in $\V$, the rebuilt set always contains $t_b$.
+If it is empty (or a rebuilt board becomes empty again), the server reports an error;
+then either the observed feedback is wrong (for example a misread colour) or
+$t_b \notin \V$. The other boards keep the smaller list $\A$,
 so the cost of the fallback is paid only where it is needed.
+The fallback only triggers once $C_b$ is empty; as long as a wrong list $\A$ still
+contains words consistent with the feedback, $C_b$ may not contain $t_b$.
+The standalone simulation has no fallback, because its targets lie in $\A$.
 
 %======================================================================
 \section{Prior distribution per board}
 %======================================================================
 
 The candidates of a board are not treated as equally likely.
-For each active board, the function \texttt{compute\_board\_model}
+For each board, the function \texttt{compute\_board\_model}
 computes local statistics over $C_b$:
 \begin{align*}
   \ell_b(c)   &= \frac{\#\{\, w \in C_b : c \in w \,\}}{|C_b|}
@@ -158,14 +184,20 @@ computes local statistics over $C_b$:
 Writing $U(w)$ for the set of distinct letters of $w$, each candidate $w \in C_b$
 gets four features in $[0,1]$:
 \begin{align*}
-  x_1(w) &= \frac{\log(1+n(w))}{\log(1+\max_v n(v))} && \text{(frequency in the source list)},\\
+  x_1(w) &= \frac{\log(1+n(w))}{\log(1+\max_{v \in \V} n(v))} && \text{(frequency in the guess file)},\\
   x_2(w) &= \frac{1}{|U(w)|}\sum_{c \in U(w)} \ell_b(c) && \text{(mean letter coverage)},\\
   x_3(w) &= \frac{1}{L}\sum_{i=1}^{L} \pi_b(i,w_i) && \text{(mean positional frequency)},\\
-  x_4(w) &= \frac{z(w)}{\max_v z(v)} && \text{(Zipf frequency from \texttt{wordfreq})}.
+  x_4(w) &= \frac{z(w)}{\max_{v \in \V} z(v)} && \text{(Zipf frequency from \texttt{wordfreq})}.
 \end{align*}
-With normalised weights $\alpha_j \ge 0$, $\sum_j \alpha_j = 1$
-(\texttt{WEIGHTS}, default $0.2,0.3,0.3,0.2$; $\alpha_4=0$ if \texttt{wordfreq}
-is not installed) the prior is
+Here $n(w)$ is the number of occurrences of $w$ in the guess file as loaded
+(duplicates are counted; $n(w)=0$ for $w \notin \G$), and
+$z(w) = \max(0, \operatorname{zipf}(w))$.
+If all $n(v)$ or all $z(v)$ are zero, the corresponding feature is $0$ everywhere.
+
+Let $\omega_1,\dots,\omega_4 \ge 0$ be the raw weights (\texttt{WEIGHTS}, default
+$0.2,0.3,0.3,0.2$). If \texttt{USE\_WORDFREQ} is off or \texttt{wordfreq} is not installed,
+$\omega_4$ is set to $0$. The weights are then normalised,
+$\alpha_j = \omega_j / \sum_{i} \omega_i$, and the prior is
 \[
   p_b(w) = \frac{s_b(w)}{\sum_{v \in C_b} s_b(v)},
   \qquad
@@ -174,9 +206,18 @@ is not installed) the prior is
 and $p_b(w) = 0$ for $w \notin C_b$. If all scores are zero, the prior is uniform.
 
 \begin{remark}
-Each word appears exactly once in the shipped lists, so $x_1$ is constant
-and does not change the ranking. The prior is a heuristic, not a calibrated
-probability. Its main job is to give common English words more weight than obscure ones.
+Since all $x_j \in [0,1]$ and $\sum_j \alpha_j = 1$, every score satisfies $s_b(w) \le 1$.
+If every word of $\G$ occurs equally often in the guess file, then $x_1(w) = 1$ for
+$w \in \G$ and $x_1(w)=0$ otherwise. On a board with $C_b \subseteq \G$ the feature
+$x_1$ is then constant: it does not change the order of the candidates by prior, but
+it adds $\alpha_1$ to every score and thereby flattens the prior,
+\[
+  \frac{\max_{w \in C_b} p_b(w)}{\min_{w \in C_b} p_b(w)} \;\le\; \frac{1}{\alpha_1}
+  \qquad (= 5 \text{ with the default weights, } 4 \text{ without \texttt{wordfreq}}).
+\]
+This changes $q_\varphi$, $E$, $P_\Sigma$ and therefore the choice of the guess.
+The prior is a heuristic, not a calibrated probability: $x_4$ favours common English
+words, while $x_2$ and $x_3$ favour words with typical letters and positions within $C_b$.
 \end{remark}
 
 %======================================================================
@@ -185,7 +226,7 @@ probability. Its main job is to give common English words more weight than obscu
 
 \subsection{Per-board feedback distribution}
 
-Fix an active board $b$ with $|C_b| \ge 2$ and a guess $g \in \G$.
+Fix an active board $b$ with $|C_b| \ge 2$ and a guess $g \in \G'$.
 The guess partitions $C_b$ into classes
 \[
   C_b^{\varphi}(g) = \{\, t \in C_b : f(g,t) = \varphi \,\},
@@ -202,7 +243,7 @@ From this partition we compute three quantities (\texttt{pattern\_metrics}):
   R_b(g)        &= \sum_{\varphi \neq \green} q_\varphi\, n_\varphi
                  && \text{(ERest: expected number of remaining candidates)},\\
   E_b(g)        &= \sum_{\varphi \neq \green,\ n_\varphi > 0} q_\varphi \log_2 n_\varphi
-                 && \text{(ELog: expected remaining uncertainty in bits)}.
+                 && \text{(ELog: expected $\log_2$ of the remaining set size)}.
 \end{align*}
 The green class is excluded from $R_b$ and $E_b$ because the board is solved in that case.
 Singletons ($|C_b|=1$) contribute $H_b = R_b = E_b = 0$:
@@ -239,11 +280,11 @@ The term $\log_2|C_b|$ does not depend on $g$.
 \end{proof}
 
 With a non-uniform prior the two criteria differ:
-$H_b$ measures how unpredictable the feedback is, whereas $E_b$ measures
-how many candidates are expected to remain, in $\log_2$ scale and weighted by the prior.
-The solver uses $E$ as its main criterion because it is directly tied to the
-remaining work: it is the expected number of bits still needed to pin down the
-targets, summed over all boards.
+$H_b$ measures how unpredictable the feedback is, whereas $E_b$ is the
+prior-weighted expectation of $\log_2$ of the number of candidates left after the guess.
+If the remaining candidates were equally likely, $\log_2 n_\varphi$ would be the number of
+bits still needed to identify the target; $E$ sums this quantity over all active boards.
+Under the non-uniform prior this interpretation is an approximation.
 
 \subsection{Candidate features}
 
@@ -268,8 +309,10 @@ $P_\exists$ treats the boards as independent, which is an approximation
 A guess with $N(g) > 0$ is a \emph{candidate guess}, otherwise a \emph{probe guess}.
 
 \begin{remark}
-Because the targets are pairwise distinct, two boards cannot both have the
-singleton set $\{g\}$ if the feedback is consistent. In practice $S(g) \in \{0,1\}$.
+If every candidate set contains its target ($t_b \in C_b$ for all $b \in \B$), then
+$S(g) \le 1$: two boards with $C_b = C_{b'} = \{g\}$ would force $t_b = t_{b'} = g$,
+contradicting distinct targets. Without this assumption, for instance when a target lies
+outside $\A$ on a board that has not been rebuilt yet, $S(g) \ge 2$ is possible.
 \end{remark}
 
 %======================================================================
@@ -277,20 +320,23 @@ singleton set $\{g\}$ if the feedback is consistent. In practice $S(g) \in \{0,1
 %======================================================================
 
 Let $\lexmin$ denote the minimum under lexicographic order of tuples.
-The rule implemented in \texttt{choose\_next\_guess} is:
+With the default settings (\texttt{PREFER\_SINGLETON\_BOARDS},
+\texttt{SINGLETON\_HARD\_PRIORITY} and \texttt{USE\_ATTEMPT\_ORIENTED\_SELECTION} all
+enabled), \texttt{choose\_next\_guess} implements:
 
 \begin{algorithm}[H]
 \caption{Choice of the next guess}
 \begin{algorithmic}[1]
-\Require active boards $\B$, candidate sets $C_b$, scores for all $g \in \G$
-\If{some $b \in \B$ has $|C_b| = 1$ \textbf{and} $\G_S = \{ g : S(g) > 0 \} \neq \emptyset$}
-  \State \Return $\displaystyle \lexmin_{g \in \G_S}
+\Require active boards $\B$, candidate sets $C_b$, scores for all $g \in \G'$
+\If{some $b \in \B$ has $|C_b| = 1$ \textbf{and} $\G'_S = \{ g \in \G' : S(g) > 0 \} \neq \emptyset$}
+  \State \Return $\displaystyle \lexmin_{g \in \G'_S}
      \bigl(-S(g),\ E(g),\ -P_\Sigma(g),\ -N(g),\ -H(g),\ -\Lambda(g),\ -\Pi(g)\bigr)$
 \EndIf
-\State $g^\star \gets \displaystyle \lexmin_{g \in \G}
+\State $g^\star \gets \displaystyle \lexmin_{g \in \G'}
    \bigl(E(g),\ -P_\Sigma(g),\ -N(g),\ -P_\exists(g),\ -H(g),\ -\Lambda(g),\ -\Pi(g),\ -x_4(g)\bigr)$
 \If{$g^\star$ is a probe \textbf{and} margin $m > 0$}
-  \State $g^c \gets$ best candidate guess under the same order
+  \State $g^c \gets \displaystyle \lexmin_{g \in \G',\ N(g) > 0}
+     \bigl(E(g),\ -P_\Sigma(g),\ -N(g),\ -S(g)\bigr)$
   \If{$E(g^c) \le E(g^\star) + m$} \State \Return $g^c$ \EndIf
 \EndIf
 \State \Return $g^\star$
@@ -298,9 +344,12 @@ The rule implemented in \texttt{choose\_next\_guess} is:
 \end{algorithm}
 
 The singleton rule reflects that a known board must be entered at some point anyway.
-Among the singleton words, the one that also splits the remaining boards best is chosen.
+Among the singleton words, the one with the smallest $E$ on the remaining boards is chosen.
 The margin $m$ (\texttt{ATTEMPT\_REST\_MARGIN}, default $0$) can prefer a guess that
-might solve a board over a slightly more informative probe.
+might solve a board over a slightly more informative probe; with the default $m = 0$,
+lines 5--10 have no effect.
+If \texttt{USE\_ATTEMPT\_ORIENTED\_SELECTION} is disabled, the code uses a different,
+candidate-first ranking (\texttt{rank\_candidate\_guesses}); this variant is not described here.
 
 %======================================================================
 \section{Bounds on the number of guesses}
@@ -308,22 +357,29 @@ might solve a board over a slightly more informative probe.
 
 \begin{proposition}
 \label{prop:bound}
-Every game needs at least $M$ guesses, and the mean solve index satisfies
+Suppose all $M$ boards are solved. Let $w_b$ be the number of guesses among
+$g_1,\dots,g_{\tau_b}$ that solved no board. Then at least $M$ guesses were made, and
 \[
+  \sum_{b=1}^{M} \tau_b = \frac{M(M+1)}{2} + \sum_{b=1}^{M} w_b,
+  \qquad
   \bar\tau = \frac{1}{M}\sum_{b=1}^{M} \tau_b \;\ge\; \frac{M+1}{2} = 16.5 .
 \]
 \end{proposition}
 
 \begin{proof}
 A guess $g$ solves board $b$ only if $g = t_b$. Since the targets are pairwise
-distinct, each guess solves at most one board, so at least $M$ guesses are needed.
-The solve indices $\tau_b$ are therefore pairwise distinct positive integers, and
-their sum is at least $1 + 2 + \dots + M = M(M+1)/2$.
+distinct, each guess solves at most one board, so at least $M$ guesses are needed and the
+solve indices $\tau_b$ are pairwise distinct. Order the boards so that
+$\tau_{(1)} < \dots < \tau_{(M)}$. Among $g_1,\dots,g_{\tau_{(j)}}$ exactly $j$ guesses
+solve a board, namely those at $\tau_{(1)},\dots,\tau_{(j)}$; the others solve none.
+Hence $\tau_{(j)} = j + w_{(j)}$. Summing over $j$ gives the identity, and $w_b \ge 0$
+gives the bound.
 \end{proof}
 
-Every probe guess and every candidate guess that solves no board pushes all
-later solve indices back by one. The first few guesses are almost always of this kind,
-because no board can be identified before some information is collected.
+Thus every guess that solves no board (every probe guess and every candidate guess that
+misses) pushes all later solve indices back by one, and
+$\bar\tau - \tfrac{M+1}{2} = \tfrac{1}{M}\sum_b w_b$.
+Equality $\bar\tau = 16.5$ holds exactly when every guess up to the last solve solves a board.
 The score $\bar\tau$ therefore measures how quickly the solver moves from
 exploration to clearing boards.
 
@@ -331,19 +387,22 @@ exploration to clearing boards.
 \section{Computational cost}
 %======================================================================
 
-One decision evaluates the feedback of every guess against every candidate
+One decision evaluates the feedback of every guess in $\G'$ against every candidate
 on every active non-singleton board:
 \[
-  \text{pairs per turn} = |\G| \cdot \sum_{b \in \B,\ |C_b| \ge 2} |C_b| .
+  \text{pairs per turn} = |\G'| \cdot \sum_{b \in \B,\ |C_b| \ge 2} |C_b| .
 \]
-For the first guess this gives
-$14855 \cdot 32 \cdot 2313 \approx 1.10 \cdot 10^9$ pairs,
-and $14855 \cdot 32 \cdot 14855 \approx 7.06 \cdot 10^9$ pairs with \texttt{-{}-wide-solutions}.
-These numbers match the progress output of the server.
-The first decision is identical in every game, so it is cached.
-The candidate sets shrink quickly. In the example run with \texttt{-{}-wide-solutions}
-(\texttt{examples/daily-2026-11-03.log}) the median set size was 287 after one guess
-and 11 after two.
+At the first decision every board has $C_b = \A$, which gives
+$M \cdot |\G'| \cdot |\A|$ pairs ($M \cdot |\G| \cdot |\A|$ without rejected words), and
+$M \cdot |\G'| \cdot |\G|$ with \texttt{-{}-wide-solutions}, where $\A = \G$.
+The pair counter of the GPU backend equals this formula. The CPU backend also counts one
+pair per active singleton board, i.e.\ it reports $|\G'| \cdot \sum_{b \in \B} |C_b|$;
+both agree whenever no active board is a singleton, in particular at the first decision.
+
+The bridge caches every decision under a key built from a fingerprint (solver file, guess
+file, solution file, weights, \texttt{wordfreq} settings), the history and the list of
+rejected words. As long as these inputs do not change, the first decision is computed only
+once and served from the cache afterwards.
 
 %======================================================================
 \section{Limitations}
@@ -353,16 +412,24 @@ and 11 after two.
 \begin{itemize}
   \item \textbf{Greedy.} The rule looks one guess ahead. It does not plan sequences of
         guesses, so it is not guaranteed to be optimal.
-  \item \textbf{Independent boards.} Each board is modelled separately. The coupling
-        through distinct targets ($t_b \neq t_{b'}$) is ignored; when one board is
-        solved with $w$, $w$ is not removed from the other boards' candidate sets.
-        $P_\exists$ also assumes independence.
-  \item \textbf{Heuristic prior.} The weights $\alpha_j$ were chosen by hand and are not
+  \item \textbf{Independent boards.} Each board is modelled separately. A guessed word
+        is removed from every board that did not show all green for it
+        (Section~2), so a word that solved one board never remains a candidate elsewhere.
+        The remaining coupling through distinct targets ($t_b \neq t_{b'}$) is ignored:
+        if $C_b = \{w\}$ on an active board $b$ (target known but not yet entered),
+        $w$ is not removed from $C_{b'}$ for $b' \neq b$, and more generally the joint
+        constraint between active boards is not used. This can overstate $N(g)$,
+        $P_\Sigma(g)$ and $P_\exists(g)$ and distort $E(g)$.
+        $P_\exists$ additionally assumes independence.
+  \item \textbf{Heuristic prior.} The weights $\alpha_j$ are fixed constants and are not
         fitted to real target distributions. Fitting them to the logs in
         \texttt{output/live\_games.jsonl} is a natural next step.
-  \item \textbf{Unknown solution list.} The prior only covers $\A$ until a board is widened.
-        In widened boards, $x_4$ (Zipf frequency) is the only feature that separates
-        common words from rare ones; $x_2$ and $x_3$ only describe letter patterns.
+  \item \textbf{Unknown solution list.} The prior only covers $\A$ until a board is rebuilt.
+        In rebuilt boards, $x_4$ (Zipf frequency) is the only feature that measures how
+        common a word is in English; $x_1$ only reflects the guess file, and
+        $x_2$ and $x_3$ only describe letter patterns.
+  \item \textbf{Guess list.} Only words in $\G'$ are proposed. A target outside $\G'$
+        (for example a word of $\A \setminus \G$) can never be entered by the solver.
 \end{itemize}
 
 \end{document}
