@@ -65,8 +65,6 @@ Wähle einen der Wege:
    - **⏭ Schritt** spielt genau einen Zug
    - **■ Stop** hält nach dem laufenden Zug an
 
-Für wiederholte Tests ist der Practice-Modus besser geeignet, damit das Daily nicht verbraucht wird.
-
 ### Server-Optionen
 
 | Option | Bedeutung |
